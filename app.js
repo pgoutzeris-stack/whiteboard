@@ -7,9 +7,14 @@ const SUPABASE_URL  = 'https://csmguwcvzreefluhahyu.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNzbWd1d2N2enJlZWZsdWhhaHl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NjM0ODcsImV4cCI6MjA5MjUzOTQ4N30.Fiafx7XBaQZXUX3bKQIBH7znBHx3B51yL-bftOHsL4Q';
 const { createClient } = supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: window.localStorage }
 });
 window.__rootsSupabaseClient = sb;
+try {
+  if (window.self !== window.top) document.documentElement.classList.add('in-iframe');
+} catch {
+  document.documentElement.classList.add('in-iframe');
+}
 
 /* ─── State ────────────────────────────────────────────────── */
 const State = {
@@ -2424,6 +2429,28 @@ function wireEvents(){
 }
 
 /* ─── Bootstrap ─────────────────────── */
+async function onAuthSession(session) {
+  if (session) {
+    State.user = session.user;
+    await loadProfile();
+    showScreen('dashboard');
+    await loadBoards();
+    const params = new URLSearchParams(location.search);
+    const bid = params.get('board');
+    if (bid) openBoard(bid);
+    return;
+  }
+  if (document.documentElement.classList.contains('in-iframe')) {
+    showScreen('login');
+    const loginCard = document.querySelector('#screen-login .login-card');
+    if (loginCard) {
+      loginCard.innerHTML = '<div style="text-align:center;padding:2rem 1rem;color:var(--muted)"><i class="fa-solid fa-lock" style="font-size:2rem;color:var(--brand);margin-bottom:1rem;display:block"></i><strong style="display:block;color:var(--ink);margin-bottom:.5rem">Anmeldung erforderlich</strong>Bitte melde dich im ROOTS Intranet an und öffne das Whiteboard erneut.</div>';
+    }
+    return;
+  }
+  showScreen('login');
+}
+
 async function bootstrap(){
   wireEvents();
   renderNewBoardModal();
@@ -2440,28 +2467,20 @@ async function bootstrap(){
 
   // Check session
   const { data: { session } } = await sb.auth.getSession();
-  if(session){
-    State.user = session.user;
-    await loadProfile();
-    showScreen('dashboard');
-    await loadBoards();
-    // Auto-open board if ?board= in URL
-    const params = new URLSearchParams(location.search);
-    const bid = params.get('board');
-    if(bid) openBoard(bid);
-  } else {
-    showScreen('login');
-  }
+  await onAuthSession(session);
+
+  window.addEventListener('roots-auth-ready', (e) => {
+    if (e.detail?.session) void onAuthSession(e.detail.session);
+  });
 
   sb.auth.onAuthStateChange(async (event, session) => {
-    if(event === 'SIGNED_IN'){
-      State.user = session.user;
-      await loadProfile();
-      showScreen('dashboard');
-      await loadBoards();
-    } else if(event === 'SIGNED_OUT'){
+    if (event === 'SIGNED_OUT') {
       State.user = null; State.profile = null; State.boards = [];
-      showScreen('login');
+      await onAuthSession(null);
+      return;
+    }
+    if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')) {
+      await onAuthSession(session);
     }
   });
 }

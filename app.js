@@ -7,9 +7,12 @@ const SUPABASE_URL  = 'https://csmguwcvzreefluhahyu.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNzbWd1d2N2enJlZWZsdWhhaHl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NjM0ODcsImV4cCI6MjA5MjUzOTQ4N30.Fiafx7XBaQZXUX3bKQIBH7znBHx3B51yL-bftOHsL4Q';
 const { createClient } = supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storage: window.localStorage }
+  auth: { persistSession: true, autoRefreshToken: false, detectSessionInUrl: false, storage: window.localStorage }
 });
 window.__rootsSupabaseClient = sb;
+if (document.documentElement.classList.contains('in-iframe') && window.RootsUserBridge?.syncAuthFromParentStorage) {
+  void window.RootsUserBridge.syncAuthFromParentStorage();
+}
 try {
   if (window.self !== window.top) document.documentElement.classList.add('in-iframe');
 } catch {
@@ -2450,9 +2453,6 @@ let _wbBootstrapped = false;
 
 async function onAuthSession(session) {
   if (session) {
-    if (State.user?.id === session.user.id && State.profile?.avatar_url && State.currentScreen === 'dashboard') {
-      return;
-    }
     State.user = session.user;
     await loadProfile();
     showScreen('dashboard');
@@ -2462,10 +2462,18 @@ async function onAuthSession(session) {
     if (bid) openBoard(bid);
     return;
   }
-  if (document.documentElement.classList.contains('in-iframe')) {
-    return;
-  }
+  if (document.documentElement.classList.contains('in-iframe')) return;
   showScreen('login');
+}
+
+function applyProfileFromParent(profile) {
+  if (!profile?.id) return;
+  if (State.user && profile.id !== State.user.id) return;
+  State.profile = { ...(State.profile || {}), ...profile };
+  if (!State.user && profile.id) {
+    State.user = { id: profile.id, email: profile.email || '' };
+  }
+  renderSidebarUser();
 }
 
 async function bootstrap(){
@@ -2478,6 +2486,11 @@ async function bootstrap(){
   if (inIframe) {
     const logoutBtn = $('#btn-logout');
     if (logoutBtn) logoutBtn.style.display = 'none';
+    showScreen('login');
+    const loginCard = document.querySelector('#screen-login .login-card');
+    if (loginCard) {
+      loginCard.innerHTML = '<div style="text-align:center;padding:3rem 1rem;color:var(--muted)"><i class="fa-solid fa-circle-notch fa-spin" style="font-size:2rem;color:var(--brand);margin-bottom:1rem;display:block"></i><span>Whiteboard wird geladen…</span></div>';
+    }
   }
 
   // Hijack initCanvas hook
@@ -2493,32 +2506,43 @@ async function bootstrap(){
   window.addEventListener('message', (e) => {
     if (e.origin !== 'https://pgoutzeris-stack.github.io') return;
     if (e.data?.type === 'roots-profile-updated' && e.data.profile) {
-      State.profile = { ...(State.profile || {}), ...e.data.profile };
-      renderSidebarUser();
+      applyProfileFromParent(e.data.profile);
     }
   });
 
   window.addEventListener('roots-auth-ready', (e) => {
     if (e.detail?.session) void onAuthSession(e.detail.session);
-    else if (!inIframe) void onAuthSession(null);
+  });
+
+  window.addEventListener('roots-auth-signed-out', () => {
+    State.user = null;
+    State.profile = null;
+    State.boards = [];
+    if (inIframe) {
+      showScreen('login');
+      const loginCard = document.querySelector('#screen-login .login-card');
+      if (loginCard) {
+        loginCard.innerHTML = '<div style="text-align:center;padding:2rem 1rem;color:var(--muted)"><i class="fa-solid fa-lock" style="font-size:2rem;color:var(--brand);margin-bottom:1rem;display:block"></i><strong style="display:block;color:var(--ink);margin-bottom:.5rem">Anmeldung erforderlich</strong>Bitte melde dich im ROOTS Intranet an.</div>';
+      }
+    } else {
+      showScreen('login');
+    }
   });
 
   if (!inIframe) {
     const { data: { session } } = await sb.auth.getSession();
     await onAuthSession(session);
+    sb.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        State.user = null; State.profile = null; State.boards = [];
+        await onAuthSession(null);
+        return;
+      }
+      if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')) {
+        await onAuthSession(session);
+      }
+    });
   }
-
-  sb.auth.onAuthStateChange(async (event, session) => {
-    if (inIframe && (event === 'INITIAL_SESSION' || event === 'SIGNED_OUT')) return;
-    if (event === 'SIGNED_OUT') {
-      State.user = null; State.profile = null; State.boards = [];
-      await onAuthSession(null);
-      return;
-    }
-    if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')) {
-      await onAuthSession(session);
-    }
-  });
 }
 
 document.addEventListener('DOMContentLoaded', bootstrap);

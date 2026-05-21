@@ -234,7 +234,7 @@ async function handleLogout(){
    ════════════════════════════════════════════════════════════ */
 async function loadBoards(){
   if(!State.user) return;
-  let q = sb.schema('whiteboard').from('boards').select('*').order('updated_at',{ascending:false});
+  let q = sb.from('wb_boards').select('*').order('updated_at',{ascending:false});
   const { data, error } = await q;
   if(error){ toast(error.message, 'error'); return; }
   State.boards = data || [];
@@ -325,7 +325,7 @@ async function renameBoard(id){
   if(!b) return;
   const name = prompt('Neuer Name:', b.title || '');
   if(!name) return;
-  const { error } = await sb.schema('whiteboard').from('boards').update({ title: name }).eq('id', id);
+  const { error } = await sb.from('wb_boards').update({ title: name }).eq('id', id);
   if(error){ toast(error.message,'error'); return; }
   b.title = name;
   renderBoardsView();
@@ -335,7 +335,7 @@ async function renameBoard(id){
 async function duplicateBoard(id){
   const b = State.boards.find(x => x.id === id);
   if(!b) return;
-  const { data: newBoard, error } = await sb.schema('whiteboard').from('boards').insert({
+  const { data: newBoard, error } = await sb.from('wb_boards').insert({
     owner_id: State.user.id,
     title: (b.title||'Board') + ' (Kopie)',
     description: b.description,
@@ -343,13 +343,13 @@ async function duplicateBoard(id){
   }).select().single();
   if(error){ toast(error.message,'error'); return; }
   // Copy objects
-  const { data: objs } = await sb.schema('whiteboard').from('objects').select('*').eq('board_id', id);
+  const { data: objs } = await sb.from('wb_objects').select('*').eq('board_id', id);
   if(objs && objs.length){
     const copies = objs.map(o => ({
       board_id: newBoard.id, type: o.type, x: o.x, y: o.y, width: o.width, height: o.height,
       rotation: o.rotation, z_index: o.z_index, data: o.data, created_by: State.user.id
     }));
-    await sb.schema('whiteboard').from('objects').insert(copies);
+    await sb.from('wb_objects').insert(copies);
   }
   await loadBoards();
   toast('Board dupliziert', 'success');
@@ -360,7 +360,7 @@ async function deleteBoard(id){
   if(!b) return;
   const ok = await confirmDialog('Board löschen?', `"${b.title}" wird unwiderruflich gelöscht.`);
   if(!ok) return;
-  const { error } = await sb.schema('whiteboard').from('boards').delete().eq('id', id);
+  const { error } = await sb.from('wb_boards').delete().eq('id', id);
   if(error){ toast(error.message,'error'); return; }
   State.boards = State.boards.filter(x => x.id !== id);
   renderBoardsView();
@@ -370,7 +370,7 @@ async function deleteBoard(id){
 async function createBoardFromTemplate(key){
   closeModal('modal-new-board');
   const tpl = TEMPLATES.find(t => t.key === key);
-  const { data: board, error } = await sb.schema('whiteboard').from('boards').insert({
+  const { data: board, error } = await sb.from('wb_boards').insert({
     owner_id: State.user.id,
     title: (tpl?.name === 'Leer' ? 'Neues Board' : tpl?.name || 'Neues Board'),
     template_key: key
@@ -379,7 +379,7 @@ async function createBoardFromTemplate(key){
   // Insert template objects
   const tplObjs = templateObjects(key, board.id);
   if(tplObjs.length){
-    await sb.schema('whiteboard').from('objects').insert(tplObjs);
+    await sb.from('wb_objects').insert(tplObjs);
   }
   await loadBoards();
   openBoard(board.id);
@@ -482,13 +482,13 @@ let dpr = window.devicePixelRatio || 1;
 
 async function openBoard(id){
   // Load board
-  const { data: board, error } = await sb.schema('whiteboard').from('boards').select('*').eq('id', id).single();
+  const { data: board, error } = await sb.from('wb_boards').select('*').eq('id', id).single();
   if(error){ toast(error.message, 'error'); return; }
   State.board = board;
-  await sb.schema('whiteboard').from('boards').update({ last_opened_at: new Date().toISOString() }).eq('id', id);
+  await sb.from('wb_boards').update({ last_opened_at: new Date().toISOString() }).eq('id', id);
 
   // Load objects
-  const { data: objs } = await sb.schema('whiteboard').from('objects').select('*').eq('board_id', id);
+  const { data: objs } = await sb.from('wb_objects').select('*').eq('board_id', id);
   State.objects.clear();
   (objs || []).forEach(o => State.objects.set(o.id, o));
   State.selected.clear();
@@ -1475,7 +1475,7 @@ async function createObject(obj){
   pushHistory();
   scheduleRender(); renderPropsPanel();
   // Save to DB
-  const { error } = await sb.schema('whiteboard').from('objects').insert({
+  const { error } = await sb.from('wb_objects').insert({
     id, board_id: State.board.id, type: newObj.type, x: newObj.x, y: newObj.y,
     width: newObj.width, height: newObj.height, rotation: newObj.rotation,
     z_index: newObj.z_index, data: newObj.data, created_by: State.user.id
@@ -1487,7 +1487,7 @@ async function createObject(obj){
 const persistObjects = debounce(async (updates) => {
   for(const u of updates){
     const { id, ...patch } = u;
-    await sb.schema('whiteboard').from('objects').update({ ...patch, updated_by: State.user.id }).eq('id', id);
+    await sb.from('wb_objects').update({ ...patch, updated_by: State.user.id }).eq('id', id);
   }
   scheduleBoardTouch();
 }, 200);
@@ -1499,7 +1499,7 @@ async function deleteSelected(){
   ids.forEach(id => State.objects.delete(id));
   State.selected.clear();
   scheduleRender(); renderPropsPanel();
-  await sb.schema('whiteboard').from('objects').delete().in('id', ids);
+  await sb.from('wb_objects').delete().in('id', ids);
   scheduleBoardTouch();
 }
 
@@ -1521,7 +1521,7 @@ async function duplicateSelected(){
   State.selected = newIds;
   pushHistory();
   scheduleRender(); renderPropsPanel();
-  await sb.schema('whiteboard').from('objects').insert(inserts);
+  await sb.from('wb_objects').insert(inserts);
   scheduleBoardTouch();
 }
 
@@ -1553,7 +1553,7 @@ async function pasteClipboard(){
   State.selected = newIds;
   pushHistory();
   scheduleRender(); renderPropsPanel();
-  await sb.schema('whiteboard').from('objects').insert(inserts);
+  await sb.from('wb_objects').insert(inserts);
   scheduleBoardTouch();
 }
 
@@ -1567,7 +1567,7 @@ async function changeSelectedStyle(patch){
   });
   scheduleRender(); renderPropsPanel();
   for(const u of updates){
-    await sb.schema('whiteboard').from('objects').update({ data: u.data, updated_by: State.user.id }).eq('id', u.id);
+    await sb.from('wb_objects').update({ data: u.data, updated_by: State.user.id }).eq('id', u.id);
   }
   scheduleBoardTouch();
 }
@@ -1589,7 +1589,7 @@ async function changeZOrder(action){
   }
   scheduleRender();
   for(const u of updates){
-    await sb.schema('whiteboard').from('objects').update({ z_index: u.z_index, updated_by: State.user.id }).eq('id', u.id);
+    await sb.from('wb_objects').update({ z_index: u.z_index, updated_by: State.user.id }).eq('id', u.id);
   }
   scheduleBoardTouch();
 }
@@ -1604,7 +1604,7 @@ async function toggleLockSelected(){
   });
   scheduleRender(); renderPropsPanel();
   for(const u of updates){
-    await sb.schema('whiteboard').from('objects').update({ locked: u.locked, updated_by: State.user.id }).eq('id', u.id);
+    await sb.from('wb_objects').update({ locked: u.locked, updated_by: State.user.id }).eq('id', u.id);
   }
 }
 
@@ -1648,7 +1648,7 @@ async function commitInlineEdit(){
   if(obj){
     obj.data = obj.data || {};
     obj.data.text = el.innerText;
-    await sb.schema('whiteboard').from('objects').update({ data: obj.data, updated_by: State.user.id }).eq('id', objId);
+    await sb.from('wb_objects').update({ data: obj.data, updated_by: State.user.id }).eq('id', objId);
     scheduleBoardTouch();
   }
   el.remove();
@@ -1801,9 +1801,9 @@ async function restoreSnapshot(snapshot){
   State.selected.clear();
   scheduleRender(); renderPropsPanel();
   // Persist
-  if(toDelete.length){ await sb.schema('whiteboard').from('objects').delete().in('id', toDelete); }
+  if(toDelete.length){ await sb.from('wb_objects').delete().in('id', toDelete); }
   for(const o of toUpsert){
-    await sb.schema('whiteboard').from('objects').upsert({
+    await sb.from('wb_objects').upsert({
       id:o.id, board_id: State.board.id, type:o.type, x:o.x, y:o.y, width:o.width, height:o.height,
       rotation:o.rotation, z_index:o.z_index, data:o.data, locked:o.locked, updated_by: State.user.id
     });
@@ -1814,7 +1814,7 @@ async function restoreSnapshot(snapshot){
 /* ─── Save board metadata (title, thumbnail) ─────────────────────── */
 const scheduleBoardTouch = debounce(async () => {
   if(!State.board) return;
-  await sb.schema('whiteboard').from('boards').update({ updated_at: new Date().toISOString() }).eq('id', State.board.id);
+  await sb.from('wb_boards').update({ updated_at: new Date().toISOString() }).eq('id', State.board.id);
   // Update thumbnail (rarely)
   if(!State.thumbnailTimer){
     State.thumbnailTimer = setTimeout(() => {
@@ -1827,7 +1827,7 @@ const scheduleBoardTouch = debounce(async () => {
 async function saveThumbnail(){
   try {
     const url = await renderBoardImage(320, 200, 'jpeg', 0.7);
-    await sb.schema('whiteboard').from('boards').update({ thumbnail: url }).eq('id', State.board.id);
+    await sb.from('wb_boards').update({ thumbnail: url }).eq('id', State.board.id);
   } catch(e){ console.warn('thumbnail', e); }
 }
 
@@ -1880,10 +1880,10 @@ async function setupRealtime(){
   if(State.presenceChannel){ try { await sb.removeChannel(State.presenceChannel); } catch{} }
   // DB changes
   State.dbChannel = sb.channel('db:board:' + State.board.id)
-    .on('postgres_changes', { event: '*', schema: 'whiteboard', table: 'objects', filter: 'board_id=eq.'+State.board.id }, payload => {
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'wb_objects', filter: 'board_id=eq.'+State.board.id }, payload => {
       handleObjectChange(payload);
     })
-    .on('postgres_changes', { event: '*', schema: 'whiteboard', table: 'comments', filter: 'board_id=eq.'+State.board.id }, () => {
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'wb_comments', filter: 'board_id=eq.'+State.board.id }, () => {
       loadComments();
     })
     .subscribe();
@@ -1977,7 +1977,7 @@ function focusOnUser(uid){
 
 /* ─── Comments ─────────────────────── */
 async function loadComments(){
-  const { data } = await sb.schema('whiteboard').from('comments').select('*').eq('board_id', State.board.id).order('created_at',{ascending:true});
+  const { data } = await sb.from('wb_comments').select('*').eq('board_id', State.board.id).order('created_at',{ascending:true});
   State.comments = data || [];
   renderCommentsList();
   renderCommentPins();
@@ -2016,9 +2016,9 @@ function renderCommentsList(){
           State.panY = h/2 - c.y * State.zoom;
           scheduleRender();
         }
-        if(b.dataset.act === 'resolve'){ await sb.schema('whiteboard').from('comments').update({ resolved: true }).eq('id', id); loadComments(); }
-        if(b.dataset.act === 'unresolve'){ await sb.schema('whiteboard').from('comments').update({ resolved: false }).eq('id', id); loadComments(); }
-        if(b.dataset.act === 'delete'){ await sb.schema('whiteboard').from('comments').delete().eq('id', id); loadComments(); }
+        if(b.dataset.act === 'resolve'){ await sb.from('wb_comments').update({ resolved: true }).eq('id', id); loadComments(); }
+        if(b.dataset.act === 'unresolve'){ await sb.from('wb_comments').update({ resolved: false }).eq('id', id); loadComments(); }
+        if(b.dataset.act === 'delete'){ await sb.from('wb_comments').delete().eq('id', id); loadComments(); }
       };
     });
   });
@@ -2052,7 +2052,7 @@ function getUserName(uid){
   return p?.name || 'Mitglied';
 }
 async function addComment(x, y, text){
-  await sb.schema('whiteboard').from('comments').insert({
+  await sb.from('wb_comments').insert({
     board_id: State.board.id, content: text, x, y, created_by: State.user.id
   });
   loadComments();
@@ -2060,7 +2060,7 @@ async function addComment(x, y, text){
 
 /* ─── Snapshots / Version history ─────────────────────── */
 async function loadSnapshots(){
-  const { data } = await sb.schema('whiteboard').from('snapshots').select('id,label,created_at,created_by').eq('board_id', State.board.id).order('created_at',{ascending:false});
+  const { data } = await sb.from('wb_snapshots').select('id,label,created_at,created_by').eq('board_id', State.board.id).order('created_at',{ascending:false});
   const list = $('#history-list');
   if(!data || data.length === 0){
     list.innerHTML = '<div class="empty-state" style="padding:1.5rem"><i class="fa-solid fa-clock-rotate-left"></i><h3>Keine Versionen</h3><p>Erstelle deinen ersten Snapshot oben.</p></div>';
@@ -2087,7 +2087,7 @@ async function loadSnapshots(){
         if(b.dataset.act === 'restore'){
           const ok = await confirmDialog('Version wiederherstellen?','Alle aktuellen Änderungen werden überschrieben.');
           if(!ok) return;
-          const { data: snap } = await sb.schema('whiteboard').from('snapshots').select('data').eq('id', id).single();
+          const { data: snap } = await sb.from('wb_snapshots').select('data').eq('id', id).single();
           if(snap?.data){
             await restoreSnapshot(snap.data);
             toast('Version wiederhergestellt', 'success');
@@ -2096,7 +2096,7 @@ async function loadSnapshots(){
         }
         if(b.dataset.act === 'delete'){
           if(await confirmDialog('Snapshot löschen?','Diese Aktion ist endgültig.')){
-            await sb.schema('whiteboard').from('snapshots').delete().eq('id', id);
+            await sb.from('wb_snapshots').delete().eq('id', id);
             loadSnapshots();
           }
         }
@@ -2110,7 +2110,7 @@ async function createSnapshot(){
     id:o.id,type:o.type,x:o.x,y:o.y,width:o.width,height:o.height,rotation:o.rotation,
     z_index:o.z_index,data:o.data,locked:o.locked
   }));
-  await sb.schema('whiteboard').from('snapshots').insert({
+  await sb.from('wb_snapshots').insert({
     board_id: State.board.id, label, data, created_by: State.user.id
   });
   $('#snapshot-label').value = '';
@@ -2126,7 +2126,7 @@ async function openShareDialog(){
   openModal('modal-share');
 }
 async function loadMembers(){
-  const { data: members } = await sb.schema('whiteboard').from('board_members').select('*').eq('board_id', State.board.id);
+  const { data: members } = await sb.from('wb_board_members').select('*').eq('board_id', State.board.id);
   const list = $('#share-members-list');
   // Owner first
   const ownerHtml = `
@@ -2154,10 +2154,10 @@ async function loadMembers(){
     </div>
   `).join('');
   list.querySelectorAll('select').forEach(s => s.onchange = async () => {
-    await sb.schema('whiteboard').from('board_members').update({ role: s.value }).eq('board_id', State.board.id).eq('user_id', s.dataset.uid);
+    await sb.from('wb_board_members').update({ role: s.value }).eq('board_id', State.board.id).eq('user_id', s.dataset.uid);
   });
   list.querySelectorAll('.share-member-remove').forEach(b => b.onclick = async () => {
-    await sb.schema('whiteboard').from('board_members').delete().eq('board_id', State.board.id).eq('user_id', b.dataset.uid);
+    await sb.from('wb_board_members').delete().eq('board_id', State.board.id).eq('user_id', b.dataset.uid);
     loadMembers();
   });
 }
@@ -2168,7 +2168,7 @@ async function inviteMember(){
   // Look up user_id by email from users.profiles
   const { data: prof } = await sb.schema('users').from('profiles').select('id').eq('email', email).maybeSingle();
   if(!prof){ toast('Kein ROOTS-Konto mit dieser E-Mail.', 'error'); return; }
-  const { error } = await sb.schema('whiteboard').from('board_members').upsert({
+  const { error } = await sb.from('wb_board_members').upsert({
     board_id: State.board.id, user_id: prof.id, role, added_by: State.user.id
   });
   if(error){ toast(error.message, 'error'); return; }
@@ -2343,7 +2343,7 @@ function wireEvents(){
   };
   $('#board-title').addEventListener('change', async (e) => {
     if(!State.board) return;
-    await sb.schema('whiteboard').from('boards').update({ title: e.target.value }).eq('id', State.board.id);
+    await sb.from('wb_boards').update({ title: e.target.value }).eq('id', State.board.id);
     State.board.title = e.target.value;
   });
   $('#btn-undo').onclick = undo;
@@ -2363,7 +2363,7 @@ function wireEvents(){
   };
   $('#btn-invite').onclick = inviteMember;
   $('#share-public').onchange = async (e) => {
-    await sb.schema('whiteboard').from('boards').update({ is_public: e.target.checked }).eq('id', State.board.id);
+    await sb.from('wb_boards').update({ is_public: e.target.checked }).eq('id', State.board.id);
     State.board.is_public = e.target.checked;
   };
 

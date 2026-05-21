@@ -121,8 +121,15 @@ function toast(msg, type='info'){
 }
 function escapeHtml(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function showScreen(name){
-  $$('.screen').forEach(s=>s.classList.remove('active'));
-  const el = $('#screen-'+name); if(el){ el.classList.add('active'); el.style.display = name==='dashboard'?'flex':name==='board'?'block':'flex'; }
+  $$('.screen').forEach(s => {
+    s.classList.remove('active');
+    s.style.display = 'none';
+  });
+  const el = $('#screen-'+name);
+  if (el) {
+    el.classList.add('active');
+    el.style.display = name === 'board' ? 'block' : 'flex';
+  }
   State.currentScreen = name;
 }
 function initials(name){ if(!name) return '?'; return name.trim().split(/\s+/).map(w=>w[0]||'').slice(0,2).join('').toUpperCase(); }
@@ -2454,12 +2461,17 @@ let _wbBootstrapped = false;
 async function onAuthSession(session) {
   if (session) {
     State.user = session.user;
-    await loadProfile();
-    showScreen('dashboard');
-    await loadBoards();
-    const params = new URLSearchParams(location.search);
-    const bid = params.get('board');
-    if (bid) openBoard(bid);
+    try {
+      await loadProfile();
+      showScreen('dashboard');
+      await loadBoards();
+      const params = new URLSearchParams(location.search);
+      const bid = params.get('board');
+      if (bid) openBoard(bid);
+    } catch (e) {
+      console.error('Whiteboard onAuthSession', e);
+      toast(e.message || 'Whiteboard konnte nicht geladen werden', 'error');
+    }
     return;
   }
   if (document.documentElement.classList.contains('in-iframe')) return;
@@ -2513,6 +2525,14 @@ async function bootstrap(){
   window.addEventListener('roots-auth-ready', (e) => {
     if (e.detail?.session) void onAuthSession(e.detail.session);
   });
+
+  if (inIframe) {
+    setTimeout(() => {
+      if (State.currentScreen === 'login' && window.RootsUserBridge?.syncAuthFromParentStorage) {
+        void window.RootsUserBridge.syncAuthFromParentStorage();
+      }
+    }, 800);
+  }
 
   window.addEventListener('roots-auth-signed-out', () => {
     State.user = null;

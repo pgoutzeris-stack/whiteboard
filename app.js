@@ -161,10 +161,21 @@ function confirmDialog(title, text, danger=true){
    ════════════════════════════════════════════════════════════ */
 async function loadProfile(){
   if(!State.user) return;
+  State.profile = {
+    id: State.user.id,
+    email: State.user.email,
+    full_name: State.user.user_metadata?.full_name || State.user.email,
+    position: '',
+    avatar_url: null,
+    app_role: 'reader',
+  };
+  renderSidebarUser();
   try {
-    const { data } = await sb.schema('users').from('profiles').select('id,email,full_name,position,avatar_url,app_role').eq('id', State.user.id).single();
-    State.profile = data || { id: State.user.id, email: State.user.email, full_name: State.user.email };
-  } catch(e){ State.profile = { id: State.user.id, email: State.user.email, full_name: State.user.email }; }
+    const { data } = await sb.schema('users').from('profiles')
+      .select('id,email,full_name,position,avatar_url,app_role')
+      .eq('id', State.user.id).maybeSingle();
+    if (data) State.profile = data;
+  } catch (_) {}
   renderSidebarUser();
 }
 
@@ -232,6 +243,12 @@ function setAuthMode(mode){
 }
 
 async function handleLogout(){
+  if (document.documentElement.classList.contains('in-iframe')) {
+    try {
+      window.parent.postMessage({ type: 'roots-request-signout' }, 'https://pgoutzeris-stack.github.io');
+    } catch (_) {}
+    return;
+  }
   await sb.auth.signOut();
 }
 
@@ -2429,8 +2446,13 @@ function wireEvents(){
 }
 
 /* ─── Bootstrap ─────────────────────── */
+let _wbBootstrapped = false;
+
 async function onAuthSession(session) {
   if (session) {
+    if (State.user?.id === session.user.id && State.profile?.avatar_url && State.currentScreen === 'dashboard') {
+      return;
+    }
     State.user = session.user;
     await loadProfile();
     showScreen('dashboard');
@@ -2441,19 +2463,22 @@ async function onAuthSession(session) {
     return;
   }
   if (document.documentElement.classList.contains('in-iframe')) {
-    showScreen('login');
-    const loginCard = document.querySelector('#screen-login .login-card');
-    if (loginCard) {
-      loginCard.innerHTML = '<div style="text-align:center;padding:2rem 1rem;color:var(--muted)"><i class="fa-solid fa-lock" style="font-size:2rem;color:var(--brand);margin-bottom:1rem;display:block"></i><strong style="display:block;color:var(--ink);margin-bottom:.5rem">Anmeldung erforderlich</strong>Bitte melde dich im ROOTS Intranet an und öffne das Whiteboard erneut.</div>';
-    }
     return;
   }
   showScreen('login');
 }
 
 async function bootstrap(){
+  if (_wbBootstrapped) return;
+  _wbBootstrapped = true;
   wireEvents();
   renderNewBoardModal();
+
+  const inIframe = document.documentElement.classList.contains('in-iframe');
+  if (inIframe) {
+    const logoutBtn = $('#btn-logout');
+    if (logoutBtn) logoutBtn.style.display = 'none';
+  }
 
   // Hijack initCanvas hook
   const origInitCanvas = initCanvas;
@@ -2465,28 +2490,26 @@ async function bootstrap(){
     }
   };
 
-  // Check session
-  const { data: { session } } = await sb.auth.getSession();
-  await onAuthSession(session);
-
-  window.addEventListener('roots-auth-ready', (e) => {
-    if (e.detail?.session) void onAuthSession(e.detail.session);
-  });
-
-  window.addEventListener('message', async (e) => {
+  window.addEventListener('message', (e) => {
     if (e.origin !== 'https://pgoutzeris-stack.github.io') return;
-    if (e.data?.type !== 'roots-auth-sync') return;
-    const payload = e.data.session;
-    if (payload?.access_token && payload?.refresh_token) {
-      const { data, error } = await sb.auth.setSession({
-        access_token: payload.access_token,
-        refresh_token: payload.refresh_token,
-      });
-      if (!error && data?.session) await onAuthSession(data.session);
+    if (e.data?.type === 'roots-profile-updated' && e.data.profile) {
+      State.profile = { ...(State.profile || {}), ...e.data.profile };
+      renderSidebarUser();
     }
   });
 
+  window.addEventListener('roots-auth-ready', (e) => {
+    if (e.detail?.session) void onAuthSession(e.detail.session);
+    else if (!inIframe) void onAuthSession(null);
+  });
+
+  if (!inIframe) {
+    const { data: { session } } = await sb.auth.getSession();
+    await onAuthSession(session);
+  }
+
   sb.auth.onAuthStateChange(async (event, session) => {
+    if (inIframe && (event === 'INITIAL_SESSION' || event === 'SIGNED_OUT')) return;
     if (event === 'SIGNED_OUT') {
       State.user = null; State.profile = null; State.boards = [];
       await onAuthSession(null);

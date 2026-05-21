@@ -9,6 +9,7 @@ const { createClient } = supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
 });
+window.__rootsSupabaseClient = sb;
 
 /* ─── State ────────────────────────────────────────────────── */
 const State = {

@@ -179,29 +179,30 @@ async function loadProfile(){
     avatar_url: null,
     app_role: 'reader',
   };
-  renderSidebarUser();
+  renderHeaderUser();
   try {
     const { data } = await sb.schema('users').from('profiles')
       .select('id,email,full_name,position,avatar_url,app_role')
       .eq('id', State.user.id).maybeSingle();
     if (data) State.profile = data;
   } catch (_) {}
-  renderSidebarUser();
+  renderHeaderUser();
 }
 
-function renderSidebarUser(){
+function renderHeaderUser(){
   const p = State.profile || {};
-  const av = $('#dash-user-avatar');
-  if(av){
-    if(p.avatar_url){
-      av.innerHTML = `<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" alt="" />`;
-      av.style.background = 'transparent';
-    } else {
-      av.textContent = initials(p.full_name || p.email);
-    }
+  const av = $('#user-avatar');
+  const nm = $('#user-name-topbar');
+  const name = p.full_name || p.email || '…';
+  if (nm) nm.textContent = p.position ? `${name} · ${p.position}` : name;
+  if (!av) return;
+  if (p.avatar_url) {
+    av.innerHTML = `<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" alt="" />`;
+    av.style.background = 'transparent';
+  } else {
+    av.textContent = initials(p.full_name || p.email);
+    av.style.background = '';
   }
-  $('#dash-user-name').textContent = p.full_name || p.email || '—';
-  $('#dash-user-role').textContent = p.position || 'Mitglied';
 }
 
 async function handleLogin(e){
@@ -2355,7 +2356,8 @@ function wireEvents(){
   // Auth
   $('#form-login').addEventListener('submit', handleLogin);
   $('#link-toggle').onclick = () => setAuthMode(State.authMode === 'signin' ? 'signup' : 'signin');
-  $('#btn-logout').onclick = handleLogout;
+  const logoutBtn = $('#btn-logout');
+  if (logoutBtn) logoutBtn.onclick = handleLogout;
   // Dashboard nav
   $$('.dash-nav-item').forEach(b => b.onclick = () => {
     $$('.dash-nav-item').forEach(x => x.classList.remove('active'));
@@ -2485,7 +2487,7 @@ function applyProfileFromParent(profile) {
   if (!State.user && profile.id) {
     State.user = { id: profile.id, email: profile.email || '' };
   }
-  renderSidebarUser();
+  renderHeaderUser();
 }
 
 async function bootstrap(){

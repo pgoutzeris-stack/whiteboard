@@ -7,7 +7,7 @@ const SUPABASE_URL  = 'https://csmguwcvzreefluhahyu.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNzbWd1d2N2enJlZWZsdWhhaHl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NjM0ODcsImV4cCI6MjA5MjUzOTQ4N30.Fiafx7XBaQZXUX3bKQIBH7znBHx3B51yL-bftOHsL4Q';
 const { createClient } = supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: window.localStorage }
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storage: window.localStorage }
 });
 window.__rootsSupabaseClient = sb;
 try {
@@ -2471,6 +2471,19 @@ async function bootstrap(){
 
   window.addEventListener('roots-auth-ready', (e) => {
     if (e.detail?.session) void onAuthSession(e.detail.session);
+  });
+
+  window.addEventListener('message', async (e) => {
+    if (e.origin !== 'https://pgoutzeris-stack.github.io') return;
+    if (e.data?.type !== 'roots-auth-sync') return;
+    const payload = e.data.session;
+    if (payload?.access_token && payload?.refresh_token) {
+      const { data, error } = await sb.auth.setSession({
+        access_token: payload.access_token,
+        refresh_token: payload.refresh_token,
+      });
+      if (!error && data?.session) await onAuthSession(data.session);
+    }
   });
 
   sb.auth.onAuthStateChange(async (event, session) => {

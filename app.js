@@ -6,8 +6,14 @@
 const SUPABASE_URL  = 'https://csmguwcvzreefluhahyu.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNzbWd1d2N2enJlZWZsdWhhaHl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NjM0ODcsImV4cCI6MjA5MjUzOTQ4N30.Fiafx7XBaQZXUX3bKQIBH7znBHx3B51yL-bftOHsL4Q';
 const { createClient } = supabase;
+const ROOTS_EMBEDDED_AUTH = window.parent !== window;
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON, {
-  auth: { persistSession: true, autoRefreshToken: false, detectSessionInUrl: false, storage: window.localStorage }
+  auth: {
+    persistSession: !ROOTS_EMBEDDED_AUTH,
+    autoRefreshToken: !ROOTS_EMBEDDED_AUTH,
+    detectSessionInUrl: false,
+    ...(ROOTS_EMBEDDED_AUTH ? {} : { storage: window.localStorage }),
+  }
 });
 window.__rootsSupabaseClient = sb;
 if (document.documentElement.classList.contains('in-iframe') && window.RootsUserBridge?.syncAuthFromParentStorage) {
